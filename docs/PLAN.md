@@ -3109,11 +3109,22 @@ The motion-phase preRender delta is the scripted orbit driver itself.
 The baseline postRender "3.00/frame" is three same-named registrations
 (overlay-host lanes) plus two others — this run predates registration
 time attribution, so owners are function-name level only; the committed
-instrument reproduces this table with full `/src/` owner columns. A
-refresh run is scheduled (this box could not complete a full app boot
-between ~12:30 and 14:00 — four consecutive boot failures with the
-renderer's main thread blocked for 10+ min; two runs had succeeded the
-same morning).
+instrument reproduces this table with full `/src/` owner columns.
+
+**Refresh run (2026-10-04, boot outage lifted, `?`-free clean boot,
+full `/src/` attribution active):** every invariant held — all
+per-frame consumers exactly 1.00/frame, no leaks, baseline postRender
+anonymous cluster still 3.00/frame (3 registrations). Frame rates were
+higher under a quieter host (0.5–1.1 frames/s parked vs 0.5–0.8 the
+day before); the calls/frame ratios are identical. One honest
+correction to the 10-03 reading: the "targets parked: 1 never called"
+preRender slot PERSISTS in the refresh with planets enabled and
+interval-driven — so it was never the planets mid-rollback; it is the
+instrument's `silentWrapped` counter (a pre-attached wrapper whose
+inner registration is superseded), an attribution artifact, not a
+product leak. The refresh's enable probe (new in the committed
+instrument) also caught the third product bug below — the first run
+where planets' enable was exercised live through the manager.
 
 **Cadence verdicts (per module, Phase 15B cohort):**
 
@@ -3141,7 +3152,7 @@ same morning).
   refresh floor; 250 ms settle. The census confirms the pattern 15B
   spreads is the one this module already used.
 
-**Two real product bugs the 15B work surfaced and fixed:**
+**Three real product bugs the 15B work surfaced and fixed:**
 
 1. **Planets could never be enabled through the manager.**
    DataLayerManager's enable transaction calls `module.update(viewer,
@@ -3161,6 +3172,26 @@ same morning).
    documented beyond-1e9-m fade could not have fired. Fixed with
    `new Cesium.NearFarScalar(1e9, 1.0, 5e9, 0.3)` on all eight labels,
    pinned by four unit tests against the installed Cesium behavior.
+3. **The planets ephemeris called a Cesium member that does not exist.**
+   `_updateEphemeris` opened with `JulianDate.toMilliseconds` — absent
+   from the installed Cesium — in code introduced 2026-08-25 that could
+   not execute until bug 1's fix let an enable reach the update path
+   (2026-10-03). Bug 1's fix therefore traded a silent rollback for a
+   LOUD one: the census refresh (2026-10-04) recorded `enable planets:
+   not-enabled … visibility-failed` with the TypeError in the
+   notification's `error` field — the stub-based unit tests pinned the
+   `update` contract but deliberately routed around the ephemeris, so
+   the whole suite passed while every real enable threw. Fixed with the
+   real-API equivalent (`JulianDate.toDate(...).getTime()`); the
+   regression cover is two-sided: a unit test that drives the enabled
+   path against the REAL cesium package, and a repo-wide contract test
+   (`src/cesiumApiContract.test.mjs`) asserting every literal
+   `Cesium.<Namespace>.<member>` in src/ resolves on the installed
+   package — the sweep found and fixed exactly one other fossil
+   (`HeadingPitchRoll.heading` called as a static in the location-bar
+   autocomplete flight, which also referenced a `mgr._flyToDestination`
+   method defined nowhere; that path now delegates to the same
+   `searchAndFlyTo` pipeline as the Enter submit).
 
 **Behavioral gate:** `scripts/qa-frame-cadence.mjs` replaces pixel A/B
 for this change set (the label-fade fix is a DELIBERATE visual change
@@ -3169,10 +3200,14 @@ asserts: 8 entities with non-zero positions after enable; no rendered
 label carries a NaN-field fade; the declutter walk tracks a camera move
 with no explicit invalidation; a parked camera holds the walk to the
 500 ms floor. Unit-level equivalents of all four assertions pass (the
-4070-test suite includes the planets/rocket/governor contract tests);
-the in-browser script itself was blocked from executing on
-2026-10-03 afternoon by the same boot outage that limited the census
-capture, and runs with the scheduled census refresh.
+4070-test suite includes the planets/rocket/governor contract tests).
+The in-browser script RAN 2026-10-04 after the boot outage lifted and
+the bug-3 fossil was fixed (planets could not enable without that
+fix): **FRAME CADENCE QA PASS, 7/7** — planets enabled through the
+manager transaction with 8/8 non-zero positions, zero broken fades,
+walks tracking the camera move (27 → 31) and holding the 500 ms floor
+(3 walks / 4 s parked), no console errors. The census refresh ran the
+same morning with all four target layers enabling cleanly.
 
 ### Honest limits
 

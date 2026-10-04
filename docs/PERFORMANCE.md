@@ -490,9 +490,7 @@ name level — the committed instrument adds `/src/` owner columns):
 Reading, honestly:
 - Baseline boot carries 8 pre-attached frame listeners; the 15B target
   cohort (radio, military-awareness, planets, rocket-launches) adds 4
-  preRender consumers (one of which never fired in the parked phase —
-  the layer was mid-rollback, see the planets enable bug in
-  docs/PLAN.md Phase 15B). Each consumer runs exactly 1.00/frame — no
+  preRender consumers. Each consumer runs exactly 1.00/frame — no
   double-registration leaks.
 - The census motivated the two Phase 15B cadence moves (planets'
   per-frame ConstantProperty churn ×8 entities → one 60 s interval;
@@ -506,3 +504,31 @@ Reading, honestly:
   failures after two clean morning runs) limited the capture to
   function-name-level attribution. The instrument is committed and
   reproduces the table with full attribution when the box boots.
+
+### Refresh run (2026-10-04, full attribution, all four targets enabling)
+
+The boot outage lifted and the refresh ran clean on the same container
+(12 s phases, 1600×900 SwiftShader, quiet host; frame counts are
+load-bound, calls/frame ratios are exact):
+
+| Scene / phase | frames | preRender listeners | preRender calls/frame | postRender listeners | postRender calls/frame |
+|---|---:|---:|---:|---:|---:|
+| baseline parked | 11 | 1 | 1.00 | 5 | 3.00 |
+| baseline motion | 13 | 2 | 1.85 | 5 | 3.00 |
+| targets parked | 13 | 5 (1 silent-wrapped) | 5.00 | 5 | 5.00 |
+| targets motion | 11 | 6 (1 silent-wrapped) | 5.91 | 5 | 5.00 |
+
+Every 10-03 invariant held (all consumers 1.00/frame, no leaks, the
+baseline postRender anonymous cluster still 3.00/frame over 3
+registrations), and the refresh's layer-enable probe — new since the
+10-03 capture — enabled all four targets cleanly for the first time,
+after fixing the `JulianDate.toMilliseconds` fossil the probe caught
+(see docs/PLAN.md Phase 15B, product bug 3; on 10-03 planets could not
+pass the manager's enable transaction at all, and the first refresh
+attempt recorded `enable planets: not-enabled → visibility-failed`).
+One correction to the 10-03 reading: the parked-phase "1 never called"
+preRender slot persists in the refresh with planets enabled and
+interval-driven — it is the instrument's `silentWrapped` counter (a
+pre-attached wrapper whose inner registration is superseded), an
+attribution artifact, not the planets mid-rollback the 10-03 note
+guessed. `scripts/qa-frame-cadence.mjs` passed 7/7 the same morning.
