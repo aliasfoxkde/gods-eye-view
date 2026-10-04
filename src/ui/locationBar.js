@@ -4,7 +4,6 @@
 // beginLocationNavigation, clearSearchedLocation, the world-jump and
 // mini-status helpers) as thin delegates; everything else is module-internal.
 
-import * as Cesium from 'cesium';
 import { logError, logWarn } from '../logger.js';
 import { CITY_POIS, flyToPresetLocation, flyToPOI, searchAndFlyTo } from '../locations.js';
 import { locationMiniStatus } from '../locationStatus.js';
@@ -64,58 +63,11 @@ export function initLocationBar(mgr) {
   });
 
   // Search submit on Enter
-  mgr._locationSearch.addEventListener('keydown', async (e) => {
+  mgr._locationSearch.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       const query = mgr._locationSearch.value.trim();
       if (!query) return;
-      const generation = mgr._beginDeferredNavigation('location');
-      if (generation === false) {
-        mgr._locationSearch.classList.remove('searching');
-        mgr._locationSearch.blur();
-        return;
-      }
-      mgr._activeLocationSearchGeneration = generation;
-      mgr._locationSearch.classList.add('searching');
-      // This lookup's AbortController: a newer search supersedes the old
-      // in-flight one (its result is generation-guarded away anyway), and
-      // dispose() aborts it so teardown stops paying for a search nobody
-      // will read. AbortError settles silently — it is not a failure.
-      mgr._locationSearchAbort?.abort();
-      const lookupAbort = new AbortController();
-      mgr._locationSearchAbort = lookupAbort;
-      try {
-        const destination = await searchAndFlyTo(mgr.viewer, query, {
-          signal: lookupAbort.signal,
-          beforeFly: () => mgr._reassertNavigationHandoff(generation),
-        });
-        if (mgr._disposed || generation !== mgr._navigationGeneration) return;
-        if (destination?.cancelled) {
-          // Authority changed while the lookup was resolving; remain inert.
-        } else if (destination) {
-          // The ACTIVE STYLE indicator reports the STYLE and nothing else.
-          // Writing the searched city here made the top-right corner read
-          // "ACTIVE STYLE / TOKYO"; where the camera is belongs to the
-          // LOCATION panel's own readout, which is updated below.
-          //
-          // Set before setActiveLocation(mgr, null) so its own mini-status
-          // refresh already sees the destination — the readout never blinks
-          // through "Location: --" on the way to the searched place.
-          mgr._searchedLocationLabel = destination.label || query;
-          setActiveLocation(mgr, null);
-          mgr._currentPoi = null;
-          collapsePOIRow(mgr);
-          updateLocationMiniStatus(mgr);
-        } else {
-          mgr._showToast('Location not found');
-        }
-      } catch (err) {
-        if (mgr._disposed || generation !== mgr._navigationGeneration
-          || err?.name === 'AbortError') return;
-        logError('Search', 'Geocoding failed:', err);
-        mgr._showToast('Search failed');
-      } finally {
-        mgr._settleLocationSearchUi(generation);
-      }
+      void runLocationSearch(mgr, query);
     }
   });
 
@@ -132,26 +84,82 @@ export function initLocationBar(mgr) {
       autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
         if (!place.geometry?.location) return;
-        const lat = place.geometry.location.lat();
-        const lon = place.geometry.location.lng();
+        // The dropdown picks the query; the flight goes through the same
+        // searchAndFlyTo pipeline as Enter (see runLocationSearch).
         const label = place.formatted_address || place.name || input.value;
         input.value = label;
-        const dest = {
-          destination: Cesium.Cartesian3.fromDegrees(lon, lat, 800),
-          label,
-          orientation: { direction: Cesium.HeadingPitchRoll.heading(0), pitch: -35, roll: 0 },
-        };
-        mgr._searchedLocationLabel = label;
-        setActiveLocation(mgr, null);
-        mgr._currentPoi = null;
-        collapsePOIRow(mgr);
-        updateLocationMiniStatus(mgr);
-        void mgr._flyToDestination(dest);
+        void runLocationSearch(mgr, label);
       });
     } catch (err) {
       logWarn('LocationSearch', 'Autocomplete setup failed:', err);
     }
   });
+}
+
+/**
+ * Resolves a location query and flies there — the one search pipeline, shared
+ * by the Enter submit and the Places Autocomplete dropdown. The dropdown only
+ * picks the query text; resolution goes through searchAndFlyTo like every
+ * other path, so navigation generation, abort bookkeeping, viewport bias, and
+ * the keyless fallbacks stay single-sourced. (This handler previously
+ * hand-rolled its own flight and called two Cesium members that do not exist
+ * — `HeadingPitchRoll.heading` as a static — plus a `mgr._flyToDestination`
+ * that was never defined anywhere, so picking a suggestion threw and nothing
+ * flew.)
+ * @param {object} mgr - StyleManager instance (src/ui.js) owning the search
+ *   input, navigation generation, and toast/readout surfaces.
+ * @param {string} query - Trimmed location query to resolve and fly to.
+ * @returns {Promise<void>}
+ */
+async function runLocationSearch(mgr, query) {
+  const generation = mgr._beginDeferredNavigation('location');
+  if (generation === false) {
+    mgr._locationSearch.classList.remove('searching');
+    mgr._locationSearch.blur();
+    return;
+  }
+  mgr._activeLocationSearchGeneration = generation;
+  mgr._locationSearch.classList.add('searching');
+  // This lookup's AbortController: a newer search supersedes the old
+  // in-flight one (its result is generation-guarded away anyway), and
+  // dispose() aborts it so teardown stops paying for a search nobody
+  // will read. AbortError settles silently — it is not a failure.
+  mgr._locationSearchAbort?.abort();
+  const lookupAbort = new AbortController();
+  mgr._locationSearchAbort = lookupAbort;
+  try {
+    const destination = await searchAndFlyTo(mgr.viewer, query, {
+      signal: lookupAbort.signal,
+      beforeFly: () => mgr._reassertNavigationHandoff(generation),
+    });
+    if (mgr._disposed || generation !== mgr._navigationGeneration) return;
+    if (destination?.cancelled) {
+      // Authority changed while the lookup was resolving; remain inert.
+    } else if (destination) {
+      // The ACTIVE STYLE indicator reports the STYLE and nothing else.
+      // Writing the searched city here made the top-right corner read
+      // "ACTIVE STYLE / TOKYO"; where the camera is belongs to the
+      // LOCATION panel's own readout, which is updated below.
+      //
+      // Set before setActiveLocation(mgr, null) so its own mini-status
+      // refresh already sees the destination — the readout never blinks
+      // through "Location: --" on the way to the searched place.
+      mgr._searchedLocationLabel = destination.label || query;
+      setActiveLocation(mgr, null);
+      mgr._currentPoi = null;
+      collapsePOIRow(mgr);
+      updateLocationMiniStatus(mgr);
+    } else {
+      mgr._showToast('Location not found');
+    }
+  } catch (err) {
+    if (mgr._disposed || generation !== mgr._navigationGeneration
+      || err?.name === 'AbortError') return;
+    logError('Search', 'Geocoding failed:', err);
+    mgr._showToast('Search failed');
+  } finally {
+    mgr._settleLocationSearchUi(generation);
+  }
 }
 
 /**

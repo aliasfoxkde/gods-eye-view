@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
 import { api } from './config/apiEndpoints.js';
+import { resolveGoogleApiKey } from './data/googlePlacesPolicy.js';
 import { findNaturalRegion } from './data/naturalEarthRegions.js';
 
 // annotationResolver (and the whole `annotations/` chunk it anchors — Phase
@@ -570,7 +571,11 @@ export async function searchAndFlyTo(viewer, query, options = {}) {
   const envKey = typeof import.meta.env === 'object' && import.meta.env
     ? import.meta.env.GOOGLE_MAPS_API_KEY
     : undefined;
-  const apiKey = window.__GOOGLE_MAPS_API_KEY__ || envKey;
+  // resolveGoogleApiKey, not a bare ||-fallback: main.js sanitizes the window
+  // value to '' when the env holds the scaffolded placeholder, and a bare
+  // fallback would resurrect the placeholder here — sending it to Google 400s
+  // every search and blinds the keyless fallbacks this function exists for.
+  const apiKey = resolveGoogleApiKey(window.__GOOGLE_MAPS_API_KEY__ || envKey);
   if (!apiKey) {
     // Keyless deployment: resolve the bundled Natural Earth pack first (zero
     // network), then the keyless Nominatim geocoder via /api/geocode, which

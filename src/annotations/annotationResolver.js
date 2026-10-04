@@ -1,6 +1,7 @@
 import * as Cesium from 'cesium';
 import { api } from '../config/apiEndpoints.js';
 import { lookupNeighborhoodRing } from '../data/neighborhoodPolygons.js';
+import { resolveGoogleApiKey } from '../data/googlePlacesPolicy.js';
 import { lookupNaturalRegionOutline, findNaturalRegion } from '../data/naturalEarthRegions.js';
 import { registerDynamicCredit, NATURAL_EARTH_CREDIT } from '../data/dataCredits.js';
 import { isPickedWorldPosition } from '../data/scenePick.js';
@@ -688,7 +689,9 @@ async function geocodePlace(query, biasRect, signal) {
   const envKey = typeof import.meta.env === 'object' && import.meta.env
     ? import.meta.env.GOOGLE_MAPS_API_KEY
     : undefined;
-  const apiKey = window.__GOOGLE_MAPS_API_KEY__ || envKey;
+  // resolveGoogleApiKey, not a bare ||-fallback — the placeholder must read
+  // as absent or the key path 400s and the offline resolvers never run.
+  const apiKey = resolveGoogleApiKey(window.__GOOGLE_MAPS_API_KEY__ || envKey);
   if (!apiKey) return null;
 
   const cacheKey = `${query.toLowerCase()}|${biasRect || ''}`;

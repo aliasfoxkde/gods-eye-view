@@ -254,12 +254,12 @@ test('validated voice camera destinations share the UI navigation authority faca
 });
 
 test('deferred search releases only after its final authority check', () => {
-  const handler = body(
+  const runner = body(
     locationBarUi,
-    /mgr\._locationSearch\.addEventListener\('keydown', async \(e\) => \{([\s\S]*?)\n {4}\}\);/,
-    'search handler',
+    /async function runLocationSearch\(mgr, query\) \{([\s\S]*?)\n\}\n/,
+    'search runner',
   );
-  ordered(handler, [
+  ordered(runner, [
     "mgr._beginDeferredNavigation('location')",
     'mgr._activeLocationSearchGeneration = generation;',
     'searchAndFlyTo(mgr.viewer, query',
@@ -269,7 +269,29 @@ test('deferred search releases only after its final authority check', () => {
     'finally',
     'mgr._settleLocationSearchUi(generation)',
   ], 'deferred search');
-  assert.doesNotMatch(handler.slice(0, handler.indexOf('searchAndFlyTo')), /_releaseFollowCamera/);
+  assert.doesNotMatch(runner.slice(0, runner.indexOf('searchAndFlyTo')), /_releaseFollowCamera/);
+});
+
+test('autocomplete place_changed delegates to the shared search runner', () => {
+  const handler = body(
+    locationBarUi,
+    /mgr\._locationSearch\.addEventListener\('keydown', \(e\) => \{([\s\S]*?)\n {2}\}\);/,
+    'search keydown',
+  );
+  assert.match(handler, /runLocationSearch\(mgr, query\)/);
+  assert.doesNotMatch(handler, /searchAndFlyTo/, 'keydown must delegate, not resolve');
+
+  const placeChanged = body(
+    locationBarUi,
+    /autocomplete\.addListener\('place_changed', \(\) => \{([\s\S]*?)\n {6}\}\);/,
+    'place_changed handler',
+  );
+  assert.match(placeChanged, /runLocationSearch\(mgr, label\)/);
+  // The hand-rolled flight this replaces called a Cesium static that does not
+  // exist (HeadingPitchRoll.heading), passed a degree pitch where flyTo takes
+  // radians, and called mgr._flyToDestination — a method defined nowhere — so
+  // picking a suggestion threw and the camera never flew.
+  assert.doesNotMatch(placeChanged, /HeadingPitchRoll|flyToDestination|camera\.flyTo/);
 });
 
 test('a direct globe gesture retires delayed camera and selection restore only', () => {
@@ -357,16 +379,23 @@ test('teardown refuses deferred location work before geocoding begins', () => {
 
   const handler = body(
     locationBarUi,
-    /mgr\._locationSearch\.addEventListener\('keydown', async \(e\) => \{([\s\S]*?)\n {4}\}\);/,
+    /mgr\._locationSearch\.addEventListener\('keydown', \(e\) => \{([\s\S]*?)\n {2}\}\);/,
     'search handler',
   );
-  ordered(handler, [
+  assert.match(handler, /runLocationSearch\(mgr, query\)/);
+
+  const runner = body(
+    locationBarUi,
+    /async function runLocationSearch\(mgr, query\) \{([\s\S]*?)\n\}\n/,
+    'search runner',
+  );
+  ordered(runner, [
     "const generation = mgr._beginDeferredNavigation('location');",
     'if (generation === false)',
     'mgr._locationSearch.blur();',
     'searchAndFlyTo(mgr.viewer, query',
   ], 'disposed search refusal');
-  assert.match(handler, /if \(generation === false\) \{[\s\S]*?return;[\s\S]*?\}\s*mgr\._activeLocationSearchGeneration/);
+  assert.match(runner, /if \(generation === false\) \{[\s\S]*?return;[\s\S]*?\}\s*mgr\._activeLocationSearchGeneration/);
 });
 
 test('refused canned destinations commit no location or POI state', () => {

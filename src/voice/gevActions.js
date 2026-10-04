@@ -6,6 +6,7 @@ import {
   getSelectedEntityContext,
   isContextRecordActive,
 } from '../data/contextStore.js';
+import { resolveGoogleApiKey } from '../data/googlePlacesPolicy.js';
 import { getNextIssPass } from '../data/satellites.js';
 import { CCTV_FOCUS_RESULT } from '../data/cctv.js';
 import { contextModeWord } from '../contextModePolicy.js';
@@ -1409,7 +1410,9 @@ async function resolveRadioLocation(args = {}, coordinates = radioCoordinatePair
   const envKey = typeof import.meta.env === 'object' && import.meta.env
     ? import.meta.env.GOOGLE_MAPS_API_KEY
     : undefined;
-  const apiKey = window.__GOOGLE_MAPS_API_KEY__ || envKey;
+  // resolveGoogleApiKey, not a bare ||-fallback — the placeholder must read
+  // as absent so the voice error names the real problem (no key configured).
+  const apiKey = resolveGoogleApiKey(window.__GOOGLE_MAPS_API_KEY__ || envKey);
   if (!apiKey) throw new Error('No Google Maps API key available for Radio location search');
   const controller = new AbortController();
   const cancelFromTurn = () => controller.abort();

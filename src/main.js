@@ -17,6 +17,7 @@ import { StyleManager } from './ui.js';
 import { resolveRenderContextOptions } from './renderContextOptions.js';
 import { flyToAustin } from './camera.js';
 import { DataLayerManager } from './data/manager.js';
+import { resolveGoogleApiKey } from './data/googlePlacesPolicy.js';
 import flightsLayer from './data/flights.js';
 import militaryFlightsLayer from './data/militaryFlights.js';
 import earthquakesLayer from './data/earthquakes.js';
@@ -133,24 +134,25 @@ async function init() {
     }
 
     // Set Google Maps API key for 3D Tiles (optional — globe works with OSM without it)
-    const googleApiKey = import.meta.env.GOOGLE_MAPS_API_KEY;
     // The scaffolded placeholder is a sentinel for "not configured yet", not a
     // key: sending it to tile.googleapis.com just 400s every boot (and the
-    // voice nearby-places proxy forwards it into the same rejection). The
-    // Places-library loader below already treated it as absent — apply that
-    // consistently to every key consumer.
-    const hasGoogleKey = Boolean(googleApiKey) && googleApiKey !== 'your_google_maps_api_key_here';
-    if (hasGoogleKey) {
+    // voice nearby-places proxy forwards it into the same rejection).
+    // resolveGoogleApiKey is the shared placeholder policy — every consumer
+    // (geocoding, annotations, voice) resolves through it too, so a
+    // placeholder-configured deployment degrades to the honest keyless path
+    // everywhere at once.
+    const googleApiKey = resolveGoogleApiKey(import.meta.env.GOOGLE_MAPS_API_KEY);
+    if (googleApiKey) {
       Cesium.GoogleMaps.defaultApiKey = googleApiKey;
     } else {
       console.info('GOOGLE_MAPS_API_KEY not set — using OpenStreetMap basemap');
     }
     // Expose API key globally for geocoding in locations.js and Places autocomplete
-    window.__GOOGLE_MAPS_API_KEY__ = hasGoogleKey ? googleApiKey : '';
+    window.__GOOGLE_MAPS_API_KEY__ = googleApiKey || '';
 
     // Load Google Maps Places library for location search autocomplete
     window.__googleMapsReady__ = new Promise((resolve) => {
-      if (!hasGoogleKey) {
+      if (!googleApiKey) {
         resolve(null);
         return;
       }
