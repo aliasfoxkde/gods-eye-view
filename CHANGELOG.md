@@ -5,6 +5,53 @@ of current runtime behavior, see [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md
 
 ## [Unreleased]
 
+## [0.10.6] — 2026-10-04
+
+Closeout of the 15B verification pass: the first live exercise of the
+enable paths the 0.10.5 fixes opened, plus a repo-wide Cesium-API
+contract that makes this bug class unshippable.
+
+### Fixed
+
+- **Planets enables for real now.** 0.10.5 fixed the missing `update`
+  contract, which let an enable reach the layer's ephemeris for the
+  first time — and it threw there: `_updateEphemeris` called
+  `JulianDate.toMilliseconds`, a member the installed Cesium does not
+  ship (latent since 2026-08-25). Every Planets enable still failed,
+  loudly this time (`visibility-failed`, TypeError in the notification).
+  Fixed with the real-API equivalent (`JulianDate.toDate(...).getTime()`).
+  Verified live: enable succeeds in four scenarios (first enable, after
+  military-awareness, user-origin, repeat), `qa-frame-cadence.mjs`
+  passes 7/7 with 8/8 non-zero positions, and the frame-census refresh
+  shows all four target layers enabling cleanly.
+- **Location search flew nowhere — twice over.** Picking a Google
+  Places suggestion (as opposed to pressing Enter) hand-rolled its own
+  camera flight: it called `HeadingPitchRoll.heading` as a static (no
+  such member), passed a degree pitch where flyTo takes radians, and
+  then called `mgr._flyToDestination` — a method defined nowhere — so
+  the handler threw and nothing flew. The dropdown now delegates to the
+  same `searchAndFlyTo` pipeline as the Enter submit (shared navigation
+  generation, abort bookkeeping, viewport bias, keyless fallbacks);
+  verified live against the dev server's keyless geocoder.
+- **A placeholder-configured `GOOGLE_MAPS_API_KEY` disabled keyless
+  geocoding.** main.js treats the scaffolded `your_google_maps_api_key_here`
+  sentinel as "no key", but the geocoding consumers re-read the raw env
+  with a `||` fallback that resurrected the placeholder — Google 400s
+  every lookup and the offline Natural Earth pack / `/api/geocode`
+  resolvers never got a chance, so every search reported "Location not
+  found". All consumers (locations, annotation resolver, voice, main)
+  now resolve through the shared `resolveGoogleApiKey` policy.
+
+### Added
+
+- **`src/cesiumApiContract.test.mjs`** — walks every literal
+  `Cesium.<Namespace>.<member>` in src/ and asserts each exists on the
+  installed package. Stub-based unit tests route around Cesium calls by
+  design, so a reference to a nonexistent member (like the two fixed
+  above) passed the entire suite and only failed live in the browser.
+  The sweep found exactly the two fossils fixed in this release; none
+  remain.
+
 ## [0.10.5] — 2026-10-03
 
 Phase 15 performance release: boot payload split (PLAN.md 15A) and the
