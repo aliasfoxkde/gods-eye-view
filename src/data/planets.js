@@ -233,7 +233,11 @@ const _cachedPositions = new Map(); // planetId → Cesium.Cartesian3
  * @returns {boolean} Whether the cache actually refreshed this call.
  */
 function _updateEphemeris(julianDate) {
-  const now = Cesium.JulianDate.toMilliseconds(julianDate);
+  // Cesium ships no JulianDate.toMilliseconds — this call threw for every
+  // enable since it landed (2026-08-25), but stayed latent because the
+  // manager's enable transaction never reached the update path until the
+  // 15B contract fix. toDate().getTime() is the real-API equivalent.
+  const now = Cesium.JulianDate.toDate(julianDate).getTime();
   if (now - _lastEphemerisUpdate < REFRESH_MS && _cachedPositions.size > 0) return false;
   _lastEphemerisUpdate = now;
 

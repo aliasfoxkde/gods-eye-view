@@ -90,6 +90,34 @@ test('destroy without enable is safe', async () => {
   assert.equal(planetsLayer.id, 'planets');
 });
 
+test('enabled update runs the real Cesium ephemeris path and positions bodies', async () => {
+  // The other tests pin contracts with _viewer null so no Cesium ephemeris
+  // code executes. That gap shipped a fossil: _updateEphemeris called
+  // JulianDate.toMilliseconds, a member the installed Cesium does not ship —
+  // every enable since 2026-08-25 threw in the enable phase (caught live
+  // 2026-10-04). This test runs the enabled path against the REAL cesium
+  // package so any nonexistent API member fails here, not in the browser.
+  const viewer = makeViewerStub();
+  await planetsLayer.init(viewer);
+  try {
+    planetsLayer.enable();
+    assert.equal(viewer.added.length, 8, 'seven planets + the Moon');
+    for (const entity of viewer.added) {
+      assert.ok(
+        entity.position instanceof Cesium.Cartesian3,
+        `${entity.id}: enable must write a Cartesian3 position`,
+      );
+      assert.ok(
+        Cesium.Cartesian3.magnitude(entity.position) > 1e8,
+        `${entity.id}: position must be a body-scale ECEF vector, not the ZERO placeholder`,
+      );
+    }
+  } finally {
+    planetsLayer.disable();
+    planetsLayer.destroy(viewer);
+  }
+});
+
 test('update satisfies the manager enable contract and is viewerless-safe', async () => {
   // DataLayerManager's enable transaction calls module.update(viewer, {signal})
   // unconditionally and rolls the enable back if it throws. Planets shipped
